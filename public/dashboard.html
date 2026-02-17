@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admissions Document Review Agent - Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        .sidebar { transition: width 0.3s; }
+        .badge-pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .status-verified { background: #dcfce7; color: #166534; }
+        .status-pending { background: #fef3c7; color: #92400e; }
+        .status-rejected { background: #fecaca; color: #991b1b; }
+        .status-escalated { background: #fee2e2; color: #7f1d1d; }
+        .status-review { background: #dbeafe; color: #1e40af; }
+        .status-conditional { background: #e0e7ff; color: #3730a3; }
+        .risk-critical { background: #dc2626; } .risk-high { background: #ea580c; }
+        .risk-medium { background: #f59e0b; } .risk-low { background: #22c55e; }
+        .risk-minor { background: #6b7280; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<!-- Sidebar -->
+<aside id="sidebar" class="sidebar fixed top-0 left-0 h-full w-64 bg-gray-900 text-white z-50 overflow-y-auto">
+    <div class="p-4 border-b border-gray-700">
+        <h1 class="text-lg font-bold flex items-center gap-2">
+            <i class="fas fa-file-shield text-blue-400"></i>
+            <span>DocReview Agent</span>
+        </h1>
+        <p class="text-xs text-gray-400 mt-1">Admissions Document System</p>
+    </div>
+    <nav class="p-3">
+        <ul class="space-y-1">
+            <li><a href="#" onclick="showSection('dashboard')" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-800 text-gray-300 hover:text-white transition">
+                <i class="fas fa-chart-pie w-5"></i> Dashboard</a></li>
+            <li><a href="#" onclick="showSection('applicants')" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-800 text-gray-300 hover:text-white transition">
+                <i class="fas fa-users w-5"></i> Applicants</a></li>
+            <li><a href="#" onclick="showSection('new-applicant')" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-800 text-gray-300 hover:text-white transition">
+                <i class="fas fa-user-plus w-5"></i> New Applicant</a></li>
+            <li><a href="#" onclick="showSection('high-risk')" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-800 text-gray-300 hover:text-white transition">
+                <i class="fas fa-exclamation-triangle w-5 text-red-400"></i> High Risk Cases</a></li>
+            <li><a href="#" onclick="showSection('notifications')" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-800 text-gray-300 hover:text-white transition">
+                <i class="fas fa-bell w-5"></i> Alerts <span id="alertBadge" class="hidden ml-auto bg-red-500 text-xs rounded-full px-2 py-0.5 badge-pulse"></span></a></li>
+        </ul>
+    </nav>
+</aside>
+
+<!-- Main Content -->
+<main class="ml-64 p-6">
+    <!-- Top Bar -->
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h2 id="pageTitle" class="text-2xl font-bold text-gray-800">Dashboard</h2>
+            <p class="text-sm text-gray-500">Admissions Document Review Agent</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="text-sm text-gray-500" id="currentDate"></span>
+        </div>
+    </div>
+
+    <!-- ==================== DASHBOARD SECTION ==================== -->
+    <section id="sec-dashboard">
+        <!-- Stat Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="statCards"></div>
+
+        <!-- Charts Row -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div class="bg-white rounded-xl shadow-sm p-5 border">
+                <h3 class="font-semibold text-gray-700 mb-4">Application Status Distribution</h3>
+                <div id="statusChart" class="space-y-3"></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-5 border">
+                <h3 class="font-semibold text-gray-700 mb-4">Program-wise Overview</h3>
+                <div id="programTable" class="overflow-auto"></div>
+            </div>
+        </div>
+
+        <!-- Recent High Risk -->
+        <div class="bg-white rounded-xl shadow-sm p-5 border">
+            <h3 class="font-semibold text-gray-700 mb-4"><i class="fas fa-exclamation-circle text-red-500 mr-2"></i>Recent High-Risk Applications</h3>
+            <div id="recentHighRisk"></div>
+        </div>
+    </section>
+
+    <!-- ==================== APPLICANTS LIST SECTION ==================== -->
+    <section id="sec-applicants" class="hidden">
+        <div class="bg-white rounded-xl shadow-sm p-5 border mb-4">
+            <div class="flex flex-wrap gap-3 items-end">
+                <div>
+                    <label class="text-xs text-gray-500 block mb-1">Search</label>
+                    <input type="text" id="filterSearch" placeholder="Name, App#, Email..." class="border rounded-lg px-3 py-2 text-sm w-56">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 block mb-1">Status</label>
+                    <select id="filterStatus" class="border rounded-lg px-3 py-2 text-sm">
+                        <option value="">All</option>
+                        <option value="Submitted">Submitted</option>
+                        <option value="Under Review">Under Review</option>
+                        <option value="Verified">Verified</option>
+                        <option value="Conditional Approval">Conditional</option>
+                        <option value="Pending Documents">Pending Docs</option>
+                        <option value="Rejected">Rejected</option>
+                        <option value="Escalated">Escalated</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 block mb-1">Program</label>
+                    <select id="filterProgram" class="border rounded-lg px-3 py-2 text-sm">
+                        <option value="">All Programs</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 block mb-1">Min Risk</label>
+                    <input type="number" id="filterMinRisk" min="0" max="10" placeholder="0" class="border rounded-lg px-3 py-2 text-sm w-20">
+                </div>
+                <button onclick="loadApplicants()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition">
+                    <i class="fas fa-search mr-1"></i> Filter
+                </button>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 border-b">
+                    <tr>
+                        <th class="px-4 py-3 text-left font-medium text-gray-600">App #</th>
+                        <th class="px-4 py-3 text-left font-medium text-gray-600">Name</th>
+                        <th class="px-4 py-3 text-left font-medium text-gray-600">Program</th>
+                        <th class="px-4 py-3 text-left font-medium text-gray-600">Status</th>
+                        <th class="px-4 py-3 text-center font-medium text-gray-600">Risk Score</th>
+                        <th class="px-4 py-3 text-left font-medium text-gray-600">Submitted</th>
+                        <th class="px-4 py-3 text-center font-medium text-gray-600">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="applicantsList"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- ==================== NEW APPLICANT SECTION ==================== -->
+    <section id="sec-new-applicant" class="hidden">
+        <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-sm p-6 border">
+            <h3 class="text-lg font-semibold mb-4"><i class="fas fa-user-plus text-blue-500 mr-2"></i>Register New Applicant</h3>
+            <form id="newApplicantForm" class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-sm text-gray-600 block mb-1">First Name *</label>
+                        <input type="text" name="first_name" required class="w-full border rounded-lg px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600 block mb-1">Last Name *</label>
+                        <input type="text" name="last_name" required class="w-full border rounded-lg px-3 py-2 text-sm">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-sm text-gray-600 block mb-1">Email *</label>
+                        <input type="email" name="email" required class="w-full border rounded-lg px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600 block mb-1">Phone</label>
+                        <input type="text" name="phone" class="w-full border rounded-lg px-3 py-2 text-sm">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-sm text-gray-600 block mb-1">Date of Birth</label>
+                        <input type="date" name="dob" class="w-full border rounded-lg px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600 block mb-1">Nationality</label>
+                        <input type="text" name="nationality" value="Indian" class="w-full border rounded-lg px-3 py-2 text-sm">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-sm text-gray-600 block mb-1">Category</label>
+                        <select name="category" class="w-full border rounded-lg px-3 py-2 text-sm">
+                            <option>General</option><option>OBC</option><option>SC</option><option>ST</option><option>EWS</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-600 block mb-1">Program *</label>
+                        <select name="program_id" id="programSelect" required class="w-full border rounded-lg px-3 py-2 text-sm"></select>
+                    </div>
+                </div>
+                <button type="submit" class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition">
+                    <i class="fas fa-plus mr-2"></i>Create Application
+                </button>
+            </form>
+        </div>
+    </section>
+
+    <!-- ==================== APPLICANT DETAIL SECTION ==================== -->
+    <section id="sec-detail" class="hidden">
+        <div id="detailContent"></div>
+    </section>
+
+    <!-- ==================== HIGH RISK SECTION ==================== -->
+    <section id="sec-high-risk" class="hidden">
+        <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <div class="p-4 bg-red-50 border-b border-red-100">
+                <h3 class="font-semibold text-red-700"><i class="fas fa-exclamation-triangle mr-2"></i>High Sensitivity Cases (Risk ≥ 7)</h3>
+            </div>
+            <div id="highRiskList" class="p-4"></div>
+        </div>
+    </section>
+
+    <!-- ==================== NOTIFICATIONS SECTION ==================== -->
+    <section id="sec-notifications" class="hidden">
+        <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <div class="p-4 bg-blue-50 border-b">
+                <h3 class="font-semibold text-blue-700"><i class="fas fa-bell mr-2"></i>System Alerts & Notifications</h3>
+            </div>
+            <div id="notificationsList" class="divide-y"></div>
+        </div>
+    </section>
+</main>
+
+<script>
+const API = '/api';
+
+// ==================== UTILITIES ====================
+function formatDate(d) { return d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; }
+function statusBadge(status) {
+    const map = { 'Verified': 'status-verified', 'Pending Documents': 'status-pending', 'Rejected': 'status-rejected',
+        'Escalated': 'status-escalated', 'Under Review': 'status-review', 'Conditional Approval': 'status-conditional',
+        'Submitted': 'status-review', 'Draft': 'bg-gray-100 text-gray-600' };
+    return `<span class="px-2.5 py-1 rounded-full text-xs font-medium ${map[status] || 'bg-gray-100 text-gray-600'}">${status}</span>`;
+}
+function riskBadge(score) {
+    let cls = score >= 9 ? 'risk-critical' : score >= 7 ? 'risk-high' : score >= 5 ? 'risk-medium' : score >= 3 ? 'risk-low' : 'risk-minor';
+    return `<span class="inline-block ${cls} text-white text-xs font-bold rounded-full w-8 h-8 flex items-center justify-center">${score}</span>`;
+}
+async function apiFetch(url, opts = {}) {
+    const res = await fetch(API + url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    return res.json();
+}
+
+// ==================== NAVIGATION ====================
+function showSection(name) {
+    document.querySelectorAll('main > section').forEach(s => s.classList.add('hidden'));
+    document.getElementById('sec-' + name)?.classList.remove('hidden');
+    const titles = { 'dashboard': 'Dashboard', 'applicants': 'All Applicants', 'new-applicant': 'New Applicant',
+        'detail': 'Applicant Detail', 'high-risk': 'High Risk Cases', 'notifications': 'Alerts & Notifications' };
+    document.getElementById('pageTitle').textContent = titles[name] || '';
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('bg-gray-800', 'text-white'));
+    if (name === 'dashboard') loadDashboard();
+    if (name === 'applicants') loadApplicants();
+    if (name === 'high-risk') loadHighRisk();
+    if (name === 'notifications') loadNotifications();
+}
+
+// ==================== DASHBOARD ====================
+async function loadDashboard() {
+    const { data } = await apiFetch('/dashboard/stats');
+    const s = data.stats;
+
+    document.getElementById('statCards').innerHTML = `
+        ${statCard('Total Applications', s.total || 0, 'fas fa-file-alt', 'blue')}
+        ${statCard('Verified', s.verified || 0, 'fas fa-check-circle', 'green')}
+        ${statCard('Pending Documents', s.pending_docs || 0, 'fas fa-clock', 'yellow')}
+        ${statCard('High Risk', s.high_risk || 0, 'fas fa-exclamation-triangle', 'red')}
+    `;
+
+    // Status chart (simple bar)
+    const statuses = [
+        { label: 'Submitted', val: s.submitted || 0, color: 'bg-blue-400' },
+        { label: 'Under Review', val: s.under_review || 0, color: 'bg-blue-500' },
+        { label: 'Verified', val: s.verified || 0, color: 'bg-green-500' },
+        { label: 'Conditional', val: s.conditional || 0, color: 'bg-indigo-500' },
+        { label: 'Pending Docs', val: s.pending_docs || 0, color: 'bg-yellow-500' },
+        { label: 'Rejected', val: s.rejected || 0, color: 'bg-red-400' },
+        { label: 'Escalated', val: s.escalated || 0, color: 'bg-red-600' }
+    ];
+    const maxVal = Math.max(...statuses.map(x => x.val), 1);
+    document.getElementById('statusChart').innerHTML = statuses.map(st => `
+        <div class="flex items-center gap-3">
+            <span class="text-xs text-gray-500 w-24 text-right">${st.label}</span>
+            <div class="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+                <div class="${st.color} h-full rounded-full transition-all" style="width:${(st.val/maxVal)*100}%"></div>
+            </div>
+            <span class="text-xs font-bold w-8">${st.val}</span>
+        </div>
+    `).join('');
+
+    // Program table
+    document.getElementById('programTable').innerHTML = `
+        <table class="w-full text-sm">
+            <thead><tr class="text-left text-gray-500 text-xs">
+                <th class="pb-2">Program</th><th class="pb-2">Campus</th><th class="pb-2 text-center">Total</th>
+                <th class="pb-2 text-center">Verified</th><th class="pb-2 text-center">High Risk</th><th class="pb-2 text-center">Avg Risk</th>
+            </tr></thead>
+            <tbody>${(data.byProgram || []).map(p => `
+                <tr class="border-t">
+                    <td class="py-2 font-medium">${p.program_name}</td>
+                    <td class="py-2 text-gray-500">${p.campus_name}</td>
+                    <td class="py-2 text-center">${p.total_applicants || 0}</td>
+                    <td class="py-2 text-center text-green-600">${p.verified || 0}</td>
+                    <td class="py-2 text-center text-red-600">${p.high_risk || 0}</td>
+                    <td class="py-2 text-center">${(p.avg_risk || 0).toFixed(1)}</td>
+                </tr>
+            `).join('')}</tbody>
+        </table>
+    `;
+
+    // Recent high risk
+    const hrRes = await apiFetch('/dashboard/high-risk');
+    document.getElementById('recentHighRisk').innerHTML = (hrRes.data || []).length === 0
+        ? '<p class="text-gray-400 text-sm py-4 text-center">No high-risk applications</p>'
+        : renderApplicantTable(hrRes.data.slice(0, 5));
+}
+
+function statCard(title, value, icon, color) {
+    const colors = { blue: 'from-blue-500 to-blue-600', green: 'from-green-500 to-green-600',
+        yellow: 'from-yellow-500 to-yellow-600', red: 'from-red-500 to-red-600' };
+    return `<div class="bg-gradient-to-br ${colors[color]} rounded-xl p-5 text-white shadow-lg">
+        <div class="flex justify-between items-start">
+            <div><p class="text-sm opacity-90">${title}</p><p class="text-3xl font-bold mt-1">${value}</p></div>
+            <i class="${icon} text-2xl opacity-70"></i>
+        </div>
+    </div>`;
+}
+
+// ==================== APPLICANTS LIST ====================
+async function loadApplicants() {
+    const params = new URLSearchParams();
+    const search = document.getElementById('filterSearch').value;
+    const status = document.getElementById('filterStatus').value;
+    const program = document.getElementById('filterProgram').value;
+    const minRisk = document.getElementById('filterMinRisk').value;
+    if (search) params.set('search', search);
+    if (status) params.set('status', status);
+    if (program) params.set('program_id', program);
+    if (minRisk) params.set('min_risk', minRisk);
+
+    const { data } = await apiFetch('/applicants/list?' + params.toString());
+    document.getElementById('applicantsList').innerHTML = (data || []).length === 0
+        ? '<tr><td colspan="7" class="text-center py-8 text-gray-400">No applicants found</td></tr>'
+        : data.map(a => `
+            <tr class="border-b hover:bg-gray-50 cursor-pointer" onclick="loadDetail(${a.id})">
+                <td class="px-4 py-3 font-mono text-xs text-blue-600">${a.application_number}</td>
+                <td class="px-4 py-3 font-medium">${a.first_name} ${a.last_name}</td>
+                <td class="px-4 py-3 text-gray-500">${a.program_name}</td>
+                <td class="px-4 py-3">${statusBadge(a.status)}</td>
+                <td class="px-4 py-3 text-center">${riskBadge(a.overall_risk_score || 0)}</td>
+                <td class="px-4 py-3 text-gray-500 text-xs">${formatDate(a.submitted_at)}</td>
+                <td class="px-4 py-3 text-center">
+                    <button onclick="event.stopPropagation(); loadDetail(${a.id})" class="text-blue-500 hover:text-blue-700 text-xs"><i class="fas fa-eye"></i> View</button>
+                </td>
+            </tr>
+        `).join('');
+}
+
+function renderApplicantTable(list) {
+    return `<table class="w-full text-sm">
+        <thead class="text-xs text-gray-500"><tr><th class="text-left pb-2">App#</th><th class="text-left pb-2">Name</th><th class="text-left pb-2">Program</th><th class="pb-2">Status</th><th class="pb-2">Risk</th></tr></thead>
+        <tbody>${list.map(a => `
+            <tr class="border-t cursor-pointer hover:bg-gray-50" onclick="loadDetail(${a.id})">
+                <td class="py-2 font-mono text-xs text-blue-600">${a.application_number}</td>
+                <td class="py-2">${a.first_name} ${a.last_name}</td>
+                <td class="py-2 text-gray-500">${a.program_name}</td>
+                <td class="py-2 text-center">${statusBadge(a.status)}</td>
+                <td class="py-2 text-center">${riskBadge(a.overall_risk_score || 0)}</td>
+            </tr>`).join('')}</tbody></table>`;
+}
+
+// ==================== APPLICANT DETAIL ====================
+async function loadDetail(id) {
+    showSection('detail');
+    const { data } = await apiFetch('/applicants/' + id);
+    const a = data.applicant;
+    const docs = data.documents || [];
+    const vals = data.validations || [];
+    const summary = data.summary;
+    const checklist = data.checklist || [];
+    const audit = data.audit || [];
+
+    document.getElementById('detailContent').innerHTML = `
+        <!-- Header -->
+        <div class="flex justify-between items-start mb-6">
+            <div>
+                <h3 class="text-xl font-bold">${a.first_name} ${a.last_name}</h3>
+                <p class="text-sm text-gray-500">${a.application_number} &middot; ${a.program_name} &middot; ${a.campus_name}</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="validateApp(${a.id})" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition">
+                    <i class="fas fa-play mr-1"></i> Run Validation
+                </button>
+                ${a.status === 'Draft' ? `<button onclick="submitApp(${a.id})" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 transition">
+                    <i class="fas fa-paper-plane mr-1"></i> Submit
+                </button>` : ''}
+            </div>
+        </div>
+
+        <!-- Info Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-white rounded-xl shadow-sm p-4 border">
+                <p class="text-xs text-gray-500 mb-2">Application Status</p>
+                ${statusBadge(a.status)}
+                <p class="text-xs text-gray-400 mt-2">${a.recommendation || ''}</p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-4 border">
+                <p class="text-xs text-gray-500 mb-2">Overall Risk Score</p>
+                <div class="flex items-center gap-3">
+                    ${riskBadge(a.overall_risk_score || 0)}
+                    <span class="text-lg font-bold">${(a.overall_risk_score || 0).toFixed(1)} / 10</span>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-4 border">
+                <p class="text-xs text-gray-500 mb-2">Documents</p>
+                <p class="text-lg font-bold">${docs.length} / ${checklist.filter(c => c.requirement_type !== 'Optional').length} uploaded</p>
+                <p class="text-xs text-gray-400">${summary ? `${summary.total_verified} verified, ${summary.total_flagged} flagged` : 'Not yet validated'}</p>
+            </div>
+        </div>
+
+        <!-- Applicant Info -->
+        <div class="bg-white rounded-xl shadow-sm p-5 border mb-6">
+            <h4 class="font-semibold text-gray-700 mb-3"><i class="fas fa-user mr-2 text-blue-500"></i>Applicant Information</h4>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div><span class="text-gray-400 block text-xs">Email</span>${a.email}</div>
+                <div><span class="text-gray-400 block text-xs">Phone</span>${a.phone || '—'}</div>
+                <div><span class="text-gray-400 block text-xs">DOB</span>${formatDate(a.dob)}</div>
+                <div><span class="text-gray-400 block text-xs">Nationality</span>${a.nationality}</div>
+                <div><span class="text-gray-400 block text-xs">Category</span>${a.category || 'General'}</div>
+                <div><span class="text-gray-400 block text-xs">Min Eligibility</span>${a.min_eligibility_percent}%</div>
+                <div><span class="text-gray-400 block text-xs">Submitted</span>${formatDate(a.submitted_at)}</div>
+                <div><span class="text-gray-400 block text-xs">Reviewed</span>${formatDate(a.reviewed_at)}</div>
+            </div>
+        </div>
+
+        <!-- Document Upload -->
+        <div class="bg-white rounded-xl shadow-sm p-5 border mb-6">
+            <h4 class="font-semibold text-gray-700 mb-3"><i class="fas fa-upload mr-2 text-green-500"></i>Upload Document</h4>
+            <form id="uploadForm" enctype="multipart/form-data" class="flex flex-wrap gap-3 items-end">
+                <div>
+                    <label class="text-xs text-gray-500 block mb-1">Document Type</label>
+                    <select id="uploadDocType" class="border rounded-lg px-3 py-2 text-sm">
+                        ${checklist.map(c => `<option value="${c.document_type_id}">${c.document_name} (${c.requirement_type})</option>`).join('')}
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 block mb-1">File</label>
+                    <input type="file" id="uploadFile" accept=".pdf,.jpg,.jpeg,.png" class="border rounded-lg px-3 py-2 text-sm">
+                </div>
+                <button type="button" onclick="uploadDoc(${a.id})" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 transition">
+                    <i class="fas fa-cloud-upload-alt mr-1"></i> Upload
+                </button>
+            </form>
+        </div>
+
+        <!-- Document Checklist & Status -->
+        <div class="bg-white rounded-xl shadow-sm p-5 border mb-6">
+            <h4 class="font-semibold text-gray-700 mb-3"><i class="fas fa-list-check mr-2 text-indigo-500"></i>Document Review Summary</h4>
+            <table class="w-full text-sm">
+                <thead class="text-xs text-gray-500 border-b">
+                    <tr><th class="text-left py-2">Document</th><th class="text-left py-2">Category</th><th class="py-2">Required</th>
+                    <th class="py-2">Status</th><th class="py-2">Issue</th><th class="py-2">Sensitivity</th></tr>
+                </thead>
+                <tbody>
+                ${checklist.map(c => {
+                    const doc = docs.find(d => d.document_type_id === c.document_type_id);
+                    const docVals = doc ? vals.filter(v => v.document_name === c.document_name) : [];
+                    const hasFail = docVals.some(v => v.status === 'Fail');
+                    let st = !doc ? 'Missing' : hasFail ? 'Flagged' : 'Verified';
+                    let issue = !doc ? 'Not uploaded' : hasFail ? docVals.filter(v => v.status === 'Fail').map(v => v.issue_description).join('; ') : '—';
+                    let score = !doc ? c.sensitivity_if_missing : hasFail ? Math.max(...docVals.filter(v => v.status === 'Fail').map(v => v.sensitivity_score)) : 0;
+                    let stClass = st === 'Verified' ? 'text-green-600' : st === 'Missing' ? 'text-red-600' : 'text-yellow-600';
+                    return `<tr class="border-b">
+                        <td class="py-2 font-medium">${c.document_name}</td>
+                        <td class="py-2 text-gray-500">${c.category}</td>
+                        <td class="py-2 text-center"><span class="text-xs ${c.requirement_type === 'Mandatory' ? 'text-red-500 font-bold' : 'text-gray-400'}">${c.requirement_type}</span></td>
+                        <td class="py-2 text-center ${stClass} font-medium">${st}</td>
+                        <td class="py-2 text-xs text-gray-500">${issue}</td>
+                        <td class="py-2 text-center">${score > 0 ? riskBadge(score) : '<span class="text-green-500">✓</span>'}</td>
+                    </tr>`;
+                }).join('')}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Audit Trail -->
+        <div class="bg-white rounded-xl shadow-sm p-5 border">
+            <h4 class="font-semibold text-gray-700 mb-3"><i class="fas fa-history mr-2 text-gray-500"></i>Audit Trail</h4>
+            <div class="space-y-2 max-h-64 overflow-auto">
+                ${audit.map(a => `
+                    <div class="flex items-start gap-3 text-sm border-l-2 border-gray-200 pl-3">
+                        <span class="text-xs text-gray-400 whitespace-nowrap">${formatDate(a.created_at)}</span>
+                        <div><span class="font-medium">${a.action}</span>
+                        <span class="text-gray-400 text-xs ml-2">by ${a.performed_by}</span></div>
+                    </div>
+                `).join('')}
+                ${audit.length === 0 ? '<p class="text-gray-400 text-sm">No audit records yet</p>' : ''}
+            </div>
+        </div>
+    `;
+}
+
+// ==================== ACTIONS ====================
+async function uploadDoc(applicantId) {
+    const fileInput = document.getElementById('uploadFile');
+    const docType = document.getElementById('uploadDocType').value;
+    if (!fileInput.files[0]) return alert('Please select a file');
+
+    const formData = new FormData();
+    formData.append('document', fileInput.files[0]);
+    formData.append('document_type_id', docType);
+
+    const res = await fetch(`${API}/applicants/${applicantId}/upload`, { method: 'POST', body: formData });
+    const json = await res.json();
+    if (json.success) {
+        alert('Document uploaded successfully (v' + json.data.version + ')');
+        loadDetail(applicantId);
+    } else {
+        alert('Upload failed: ' + json.message);
+    }
+}
+
+async function validateApp(id) {
+    const res = await apiFetch('/applicants/' + id + '/validate', { method: 'POST' });
+    if (res.success) {
+        alert(`Validation complete!\nRisk Score: ${res.data.summary.overall_risk_score}\nStatus: ${res.data.summary.status}`);
+        loadDetail(id);
+    } else {
+        alert('Validation failed: ' + res.message);
+    }
+}
+
+async function submitApp(id) {
+    if (!confirm('Submit this application? This will trigger auto-validation.')) return;
+    const res = await apiFetch('/applicants/' + id + '/submit', { method: 'POST' });
+    if (res.success) {
+        alert('Application submitted and validated!');
+        loadDetail(id);
+    } else {
+        alert('Submit failed: ' + res.message);
+    }
+}
+
+// ==================== HIGH RISK & NOTIFICATIONS ====================
+async function loadHighRisk() {
+    const { data } = await apiFetch('/dashboard/high-risk');
+    document.getElementById('highRiskList').innerHTML = (data || []).length === 0
+        ? '<p class="text-gray-400 text-sm text-center py-8">No high-risk cases</p>'
+        : renderApplicantTable(data);
+}
+
+async function loadNotifications() {
+    const { data } = await apiFetch('/dashboard/notifications');
+    document.getElementById('notificationsList').innerHTML = (data || []).length === 0
+        ? '<p class="text-gray-400 text-sm text-center py-8">No notifications</p>'
+        : data.map(n => `
+            <div class="p-4 hover:bg-gray-50 ${n.is_read ? 'opacity-60' : ''} cursor-pointer" onclick="markRead(${n.id})">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <span class="inline-block px-2 py-0.5 text-xs rounded font-medium mr-2 ${
+                            n.alert_type.includes('Fraud') || n.alert_type.includes('HighRisk') ? 'bg-red-100 text-red-700' :
+                            n.alert_type.includes('Missing') ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'
+                        }">${n.alert_type.replace(/([A-Z])/g, ' $1').trim()}</span>
+                        <span class="font-medium text-sm">${n.title}</span>
+                        ${n.application_number ? `<span class="text-xs text-gray-400 ml-2">${n.application_number}</span>` : ''}
+                        <p class="text-sm text-gray-500 mt-1">${n.message}</p>
+                    </div>
+                    <span class="text-xs text-gray-400 whitespace-nowrap">${formatDate(n.created_at)}</span>
+                </div>
+            </div>
+        `).join('');
+}
+
+async function markRead(id) {
+    await apiFetch('/dashboard/notifications/' + id + '/read', { method: 'PUT' });
+    loadNotifications();
+}
+
+// ==================== NEW APPLICANT ====================
+document.getElementById('newApplicantForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = Object.fromEntries(new FormData(e.target));
+    const res = await apiFetch('/applicants/create', {
+        method: 'POST', body: JSON.stringify(formData)
+    });
+    if (res.success) {
+        alert('Application created: ' + res.data.application_number);
+        loadDetail(res.data.id);
+    } else {
+        alert('Error: ' + res.message);
+    }
+});
+
+// ==================== INIT ====================
+async function init() {
+    document.getElementById('currentDate').textContent = new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    // Load programs
+    const { data } = await apiFetch('/applicants/config/programs');
+    const opts = (data || []).map(p => `<option value="${p.id}">${p.name} (${p.campus_name})</option>`).join('');
+    document.getElementById('programSelect').innerHTML = opts;
+    document.getElementById('filterProgram').innerHTML = '<option value="">All Programs</option>' + opts;
+    loadDashboard();
+}
+init();
+</script>
+</body>
+</html>
