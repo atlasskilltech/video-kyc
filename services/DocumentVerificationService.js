@@ -9,14 +9,11 @@ class DocumentVerificationService {
     constructor() {
         this.provider = process.env.AI_PROVIDER || 'claude'; // 'claude' or 'openai'
 
-        // Always init Claude client if key exists (needed for PDF fallback when using OpenAI)
-        if (process.env.ANTHROPIC_API_KEY) {
+        if (this.provider === 'claude') {
             this.claude = new Anthropic.default({
                 apiKey: process.env.ANTHROPIC_API_KEY
             });
-        }
-
-        if (this.provider === 'openai') {
+        } else {
             this.openai = new OpenAI.default({
                 apiKey: process.env.OPENAI_API_KEY
             });
@@ -227,33 +224,34 @@ Be strict but fair. Only approve if reasonably confident the document is correct
         // Detect media type using magic bytes
         let mediaType = this.getMediaType(document.filename, document.contentType, fileBuffer);
 
-        // OpenAI vision API doesn't accept PDFs — use Claude for PDFs (native support)
-        if (mediaType === 'application/pdf') {
-            if (this.claude) {
-                console.log(`[Verification] PDF detected — using Claude for native PDF support`);
-                return this.verifyWithClaude(fileBuffer, document);
-            }
-            throw new Error('PDF documents require ANTHROPIC_API_KEY for processing. Set it in .env or switch AI_PROVIDER=claude.');
-        }
-
-        // Compress if needed
-        const compressed = await this.compressImage(fileBuffer, mediaType);
-        fileBuffer = compressed.buffer;
-        mediaType = compressed.mediaType;
-
         const base64Data = fileBuffer.toString('base64');
         const userPrompt = this.buildDocumentPrompt(document);
+        const contentParts = [];
 
-        const contentParts = [
-            {
+        if (mediaType === 'application/pdf') {
+            // GPT-4o supports PDFs natively via file content type
+            console.log(`[Verification] Sending PDF to OpenAI (${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB)`);
+            contentParts.push({
+                type: 'file',
+                file: {
+                    filename: document.filename || 'document.pdf',
+                    file_data: `data:application/pdf;base64,${base64Data}`
+                }
+            });
+        } else {
+            // Compress images if needed
+            const compressed = await this.compressImage(fileBuffer, mediaType);
+            const compressedBase64 = compressed.buffer.toString('base64');
+            contentParts.push({
                 type: 'image_url',
                 image_url: {
-                    url: `data:${mediaType};base64,${base64Data}`,
+                    url: `data:${compressed.mediaType};base64,${compressedBase64}`,
                     detail: 'high'
                 }
-            },
-            { type: 'text', text: userPrompt }
-        ];
+            });
+        }
+
+        contentParts.push({ type: 'text', text: userPrompt });
 
         const response = await this.openai.chat.completions.create({
             model: process.env.OPENAI_MODEL || 'gpt-4o',
