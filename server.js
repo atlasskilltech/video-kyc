@@ -30,6 +30,7 @@ app.set('views', path.join(__dirname, 'views'));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/applicants', require('./routes/applicantRoutes'));
 app.use('/api/dashboard', require('./routes/dashboardRoutes'));
+app.use('/api/verification', require('./routes/verificationRoutes'));
 
 // ===================== WEB VIEWS =====================
 app.get('/', (req, res) => {
