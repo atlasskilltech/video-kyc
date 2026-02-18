@@ -1,10 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI = require('openai');
 const sharp = require('sharp');
-const { execFile } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
 
 const MAX_IMAGE_BYTES = 4.5 * 1024 * 1024; // 4.5MB to stay safely under 5MB API limit
 
@@ -13,11 +9,14 @@ class DocumentVerificationService {
     constructor() {
         this.provider = process.env.AI_PROVIDER || 'claude'; // 'claude' or 'openai'
 
-        if (this.provider === 'claude') {
+        // Always init Claude client if key exists (needed for PDF fallback when using OpenAI)
+        if (process.env.ANTHROPIC_API_KEY) {
             this.claude = new Anthropic.default({
                 apiKey: process.env.ANTHROPIC_API_KEY
             });
-        } else {
+        }
+
+        if (this.provider === 'openai') {
             this.openai = new OpenAI.default({
                 apiKey: process.env.OPENAI_API_KEY
             });
@@ -176,56 +175,6 @@ Be strict but fair. Only approve if reasonably confident the document is correct
         return { buffer: compressed, mediaType: 'image/jpeg' };
     }
 
-    /**
-     * Convert a PDF buffer to a JPEG image (first page) using pdftoppm (poppler-utils).
-     */
-    async convertPdfToImage(fileBuffer) {
-        const tmpDir = os.tmpdir();
-        const tmpPdf = path.join(tmpDir, `doc_verify_${Date.now()}.pdf`);
-        const tmpOutPrefix = path.join(tmpDir, `doc_verify_${Date.now()}_out`);
-
-        try {
-            // Write PDF to temp file
-            fs.writeFileSync(tmpPdf, fileBuffer);
-
-            // Use pdftoppm to convert first page to JPEG
-            const imageBuffer = await new Promise((resolve, reject) => {
-                execFile('pdftoppm', [
-                    '-jpeg',         // output JPEG format
-                    '-r', '200',     // 200 DPI resolution
-                    '-f', '1',       // first page
-                    '-l', '1',       // last page (only page 1)
-                    '-singlefile',   // don't add page number suffix
-                    tmpPdf,
-                    tmpOutPrefix
-                ], { timeout: 30000 }, (err) => {
-                    if (err) {
-                        return reject(new Error(`pdftoppm failed: ${err.message}`));
-                    }
-
-                    const outFile = tmpOutPrefix + '.jpg';
-                    if (!fs.existsSync(outFile)) {
-                        return reject(new Error('pdftoppm produced no output'));
-                    }
-
-                    const buf = fs.readFileSync(outFile);
-                    // Clean up output file
-                    try { fs.unlinkSync(outFile); } catch (_) {}
-                    resolve(buf);
-                });
-            });
-
-            console.log(`[Verification] PDF converted to JPEG (${(imageBuffer.length / 1024 / 1024).toFixed(1)}MB)`);
-            return imageBuffer;
-        } catch (err) {
-            console.log(`[Verification] PDF to image conversion failed: ${err.message}`);
-            throw new Error(`PDF processing failed: ${err.message}. If using OpenAI, try switching to AI_PROVIDER=claude which natively supports PDFs.`);
-        } finally {
-            // Clean up temp PDF
-            try { fs.unlinkSync(tmpPdf); } catch (_) {}
-        }
-    }
-
     async verifyWithClaude(fileBuffer, document) {
         // Detect media type using magic bytes
         let mediaType = this.getMediaType(document.filename, document.contentType, fileBuffer);
@@ -278,11 +227,13 @@ Be strict but fair. Only approve if reasonably confident the document is correct
         // Detect media type using magic bytes
         let mediaType = this.getMediaType(document.filename, document.contentType, fileBuffer);
 
-        // If PDF, convert to image first since OpenAI vision API doesn't accept PDFs
+        // OpenAI vision API doesn't accept PDFs — use Claude for PDFs (native support)
         if (mediaType === 'application/pdf') {
-            console.log(`[Verification] Converting PDF to image for OpenAI processing...`);
-            fileBuffer = await this.convertPdfToImage(fileBuffer);
-            mediaType = 'image/jpeg';
+            if (this.claude) {
+                console.log(`[Verification] PDF detected — using Claude for native PDF support`);
+                return this.verifyWithClaude(fileBuffer, document);
+            }
+            throw new Error('PDF documents require ANTHROPIC_API_KEY for processing. Set it in .env or switch AI_PROVIDER=claude.');
         }
 
         // Compress if needed
