@@ -1,6 +1,10 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI = require('openai');
 const sharp = require('sharp');
+const { execFile } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 const MAX_IMAGE_BYTES = 4.5 * 1024 * 1024; // 4.5MB to stay safely under 5MB API limit
 
@@ -173,19 +177,52 @@ Be strict but fair. Only approve if reasonably confident the document is correct
     }
 
     /**
-     * Convert a PDF buffer to a JPEG image (first page) for providers that don't support PDFs directly.
+     * Convert a PDF buffer to a JPEG image (first page) using pdftoppm (poppler-utils).
      */
     async convertPdfToImage(fileBuffer) {
+        const tmpDir = os.tmpdir();
+        const tmpPdf = path.join(tmpDir, `doc_verify_${Date.now()}.pdf`);
+        const tmpOutPrefix = path.join(tmpDir, `doc_verify_${Date.now()}_out`);
+
         try {
-            // sharp with libvips can render PDF first page to image
-            const imageBuffer = await sharp(fileBuffer, { density: 200 })
-                .jpeg({ quality: 85 })
-                .toBuffer();
+            // Write PDF to temp file
+            fs.writeFileSync(tmpPdf, fileBuffer);
+
+            // Use pdftoppm to convert first page to JPEG
+            const imageBuffer = await new Promise((resolve, reject) => {
+                execFile('pdftoppm', [
+                    '-jpeg',         // output JPEG format
+                    '-r', '200',     // 200 DPI resolution
+                    '-f', '1',       // first page
+                    '-l', '1',       // last page (only page 1)
+                    '-singlefile',   // don't add page number suffix
+                    tmpPdf,
+                    tmpOutPrefix
+                ], { timeout: 30000 }, (err) => {
+                    if (err) {
+                        return reject(new Error(`pdftoppm failed: ${err.message}`));
+                    }
+
+                    const outFile = tmpOutPrefix + '.jpg';
+                    if (!fs.existsSync(outFile)) {
+                        return reject(new Error('pdftoppm produced no output'));
+                    }
+
+                    const buf = fs.readFileSync(outFile);
+                    // Clean up output file
+                    try { fs.unlinkSync(outFile); } catch (_) {}
+                    resolve(buf);
+                });
+            });
+
             console.log(`[Verification] PDF converted to JPEG (${(imageBuffer.length / 1024 / 1024).toFixed(1)}MB)`);
             return imageBuffer;
         } catch (err) {
             console.log(`[Verification] PDF to image conversion failed: ${err.message}`);
             throw new Error(`PDF processing failed: ${err.message}. If using OpenAI, try switching to AI_PROVIDER=claude which natively supports PDFs.`);
+        } finally {
+            // Clean up temp PDF
+            try { fs.unlinkSync(tmpPdf); } catch (_) {}
         }
     }
 
